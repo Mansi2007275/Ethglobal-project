@@ -97,6 +97,7 @@ export function explain(e: unknown): { text: string; name?: string; args?: reado
       TooLate: "The claim window has closed. The sender can refund it now.",
       TooEarly: "Not yet. Wait for the timer to finish.",
       NotOwner: "Only the wallet owner can do this.",
+      BadDelay: "That undo delay is out of range. Pick between 1 minute and 30 days.",
       AlreadyHasWallet: "You already have an Unpoison wallet.",
     };
     if (name) return { text: map[name] ?? name, name, args: revert?.data?.args };

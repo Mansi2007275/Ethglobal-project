@@ -25,10 +25,18 @@
 - Empty `.env` keys: `DEPLOYER_PRIVATE_KEY`, `AMIT_PRIVATE_KEY`, `SCAMMER_PRIVATE_KEY`, `UNPOISON_WALLET`,
   `ARKIV_PRIVATE_KEY`, `ARKIV_ACCESS_KEY`.
 
-### STEP 2 — BLOCKED (waiting on Mansi)
-A remote already exists: `origin` → `https://github.com/Mansi2007275/unpoison.git`, already holding all 7 commits
-on `main`. The new instructions name a different repo, `Ethglobal-project.git`, but only "if no remote exists" —
-and one does. Not guessing which repo should receive the submission. Nothing pushed this step.
+### STEP 2 DONE: GitHub
+Mansi chose to keep the existing repo: **https://github.com/Mansi2007275/unpoison.git**
+(`Ethglobal-project.git` was not used). Branch was already `main`, so `git branch -M main` was a no-op.
+No pull/merge was needed — the remote had no commits we did not already have. Pushed cleanly, `0 ahead / 0 behind`.
+One transient DNS failure (`Could not resolve host: github.com`) hit mid-step; retried and it succeeded.
+
+### Funding status (checked on chain)
+| Account | Gas | USDC | Ready? |
+| --- | --- | --- | --- |
+| Owner `0xE3f8…eb4f` | 20.0 | 20.0 | ✅ |
+| Amit `0x75E0…b263` | 20.0 | 20.0 | ✅ |
+| Scammer `0x75e9…2263` | **0** | **0** | ❌ needs faucet before STEP 4d |
 
 ### STEP 3 DONE: install and build
 - `npm install` → up to date, 496 packages, no errors.
@@ -39,6 +47,44 @@ and one does. Not guessing which repo should receive the submission. Nothing pus
   (`.next/static/chunks/app/page.js` and `layout.js` both contain the factory address).
 - Note: a leftover `node` process from an earlier reaped dev server was still holding port 3000; it was stopped
   so the current server (with `.env.local` loaded) owns port 3000.
+
+## Verification
+
+### 1. Source matches the deployed contract
+| Item | Result | Proof |
+| --- | --- | --- |
+| `MAX_DELAY` present in `UnpoisonWallet.sol` | **FAIL → FIXED** | It was **missing** from local source. Added `uint256 public constant MAX_DELAY = 30 days;` plus `\|\| > MAX_DELAY` → `revert BadDelay()` in the constructor, `tighten()` and `proposeChange()`. `BadDelay` reused, nothing else changed. |
+| Test `test_delay_cappedAtMax` added | **PASS** | `contracts/test/UnpoisonWallet.t.sol`. Covers `tighten(2**64)` revert, `proposeChange(2**64,false)` revert, `tighten(30 days)` OK, `factory.createWallet(2**64)` revert (from a fresh owner, so `AlreadyHasWallet` cannot mask it). |
+| `forge install` + `forge test` | **PASS 27/27** | `lib/` was missing; installed forge-std + openzeppelin-contracts v5.1.0 `--no-git`. `Suite result: ok. 27 passed; 0 failed; 0 skipped`. |
+| Live: deployed code has the cap | **PASS** | `cast estimate createWallet(999999999999)` → `execution reverted, data: "0x0137f4a0"`, and `cast sig "BadDelay()"` = `0x0137f4a0`. |
+| Live: cap is exactly 30 days | **PASS** | Boundary probe on the deployed factory: `59`→BadDelay, `60`→OK (gas 2948456), `2592000`→OK (gas 2948468), `2592001`→BadDelay, `2**64`→BadDelay. 2592000s = exactly 30 days. |
+| `web/lib/abi.ts` regenerated | **PASS** | ABI did change (81 → 82 wallet entries; the new entry is `MAX_DELAY`). Regenerated from `contracts/out/`; 82 wallet + 6 factory entries. |
+
+A note on what the live probe proves: our factory does **not** check the delay itself, so a `BadDelay` revert from
+`createWallet` can only come from the `UnpoisonWallet` constructor. That is why the probe proves the *deployed
+wallet* carries the cap. Before the patch, local source would have **accepted** 999999999999 — so the local source
+and the deployed contract genuinely disagreed, and now they agree.
+
+### 2. STEP 4 live tests (a–g)
+**NOT RUN — blocked on Mansi.** `walletOf(owner)` is still `0x0`, so the wallet does not exist yet, and every
+remaining sub-test depends on it. 4d additionally needs `SCAMMER_PRIVATE_KEY` (empty) and faucet funds for the
+scammer (0 gas / 0 USDC on chain). Nothing here is reported as passing.
+
+### 3. App checks
+| Item | Result | Proof |
+| --- | --- | --- |
+| `npx next build` | **PASS** | `✓ Compiled successfully in 28.4s`, 11 routes, no type errors (re-run after the ABI + error-map edits). |
+| Routes return 200 | **PASS** | `/`, `/send`, `/contacts`, `/activity`, `/spam`, `/pair`, `/finish`, `/claim` → all `200`. |
+| `/api/spam` without `?wallet=` | **PASS** | Returns `400` (`"Pass ?wallet=0x…"`), not a crash. |
+| `/api/spam?wallet=<my wallet>` with the poison tx + ≥2 reasons | **BLOCKED** | Needs the wallet from 4a and the poison tx from 4d. Probed with an EOA: the route handles it gracefully (`getContacts` returned no data) instead of crashing. |
+| `/api/spam` finishes under 10s on serverless | **PASS (measured)** | The 50 000-block scan is **2.3s** over 6 sequential `getLogs` calls (10 000-block chunks) against the live RPC. No range reduction needed. Will re-measure with real data once the wallet exists. |
+| Wrong network shows "Switch to Arc" | **PASS (code-verified, not clicked)** | `components/ui.tsx:59-62` — when `chainId !== arcTestnet.id` it renders a **Switch to Arc** button calling `switchChain`. `lib/hooks.ts:121` also auto-switches before any tx. Live click test belongs to STEP 4. |
+| Contract errors in plain English | **PASS** | `lib/hooks.ts` `explain()` maps all four required: `LookalikeStopped` → "Stopped: this address looks like one of your contacts.", `InsufficientAvailable` → "Not enough free USDC in your Unpoison wallet.", `WrongMiddle` → "Those 6 characters don't match the address.", `TooEarly` → "Not yet. Wait for the timer to finish." Added `BadDelay` → "That undo delay is out of range. Pick between 1 minute and 30 days.", since the new cap makes it reachable. |
+
+### Notes from this round
+- `next build` run while `next dev` was live corrupted `.next` and made 7 routes return 500. Not an app bug:
+  killed the server, removed `.next`, restarted, and all routes returned 200. Worth avoiding during the demo.
+- One stale `node` process from an earlier reaped dev server had to be stopped to free port 3000.
 
 ## Deployed
 | What | Value |

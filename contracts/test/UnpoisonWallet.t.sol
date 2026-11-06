@@ -313,6 +313,37 @@ contract UnpoisonWalletTest is Test {
         assertTrue(wallet.protectionEnabled());
     }
 
+    /// An absurd delay would lock funds away effectively forever, so it is capped at MAX_DELAY.
+    function test_delay_cappedAtMax() public {
+        uint256 huge = 2 ** 64;
+
+        // Too long to tighten to.
+        vm.prank(rahul);
+        vm.expectRevert(UnpoisonWallet.BadDelay.selector);
+        wallet.tighten(huge);
+
+        // Too long to propose, even behind the timelock.
+        vm.prank(rahul);
+        vm.expectRevert(UnpoisonWallet.BadDelay.selector);
+        wallet.proposeChange(huge, false);
+
+        // Exactly at the cap is still allowed.
+        // Read the cap first: vm.prank only covers the next call, and an inline
+        // wallet.MAX_DELAY() would consume it before tighten() ran.
+        uint256 cap = wallet.MAX_DELAY();
+        assertEq(cap, 30 days);
+        vm.prank(rahul);
+        wallet.tighten(cap);
+        assertEq(wallet.escrowDelay(), cap);
+
+        // The constructor rejects it too, so no wallet can be born with it.
+        // A fresh owner is used so AlreadyHasWallet cannot mask the BadDelay revert.
+        address newcomer = makeAddr("newcomer");
+        vm.prank(newcomer);
+        vm.expectRevert(UnpoisonWallet.BadDelay.selector);
+        factory.createWallet(huge);
+    }
+
     function test_saferChange_isInstant() public {
         vm.prank(rahul);
         wallet.tighten(2 hours);

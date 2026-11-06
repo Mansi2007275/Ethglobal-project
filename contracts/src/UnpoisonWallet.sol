@@ -70,6 +70,7 @@ contract UnpoisonWallet is EIP712, ReentrancyGuard {
     uint64 public constant TIMELOCK = 24 hours;
     uint64 public constant MIN_WINDOW = 60;
     uint64 public constant MAX_WINDOW = 7 days;
+    uint256 public constant MAX_DELAY = 30 days;
 
     // --------------------------------------------------------------- storage
 
@@ -134,7 +135,7 @@ contract UnpoisonWallet is EIP712, ReentrancyGuard {
 
     constructor(address _owner, address _usdc, uint256 _escrowDelay) EIP712("Unpoison", "1") {
         if (_owner == address(0) || _usdc == address(0)) revert ZeroAddress();
-        if (_escrowDelay < MIN_WINDOW) revert BadDelay();
+        if (_escrowDelay < MIN_WINDOW || _escrowDelay > MAX_DELAY) revert BadDelay();
         owner = _owner;
         usdc = IERC20(_usdc);
         escrowDelay = _escrowDelay;
@@ -356,7 +357,7 @@ contract UnpoisonWallet is EIP712, ReentrancyGuard {
 
     /// @notice Safer changes (longer delay, protection on) apply now.
     function tighten(uint256 newDelay) external onlyOwner {
-        if (newDelay < escrowDelay) revert BadDelay();
+        if (newDelay < escrowDelay || newDelay > MAX_DELAY) revert BadDelay();
         escrowDelay = newDelay;
         protectionEnabled = true;
         emit SettingsTightened(escrowDelay, protectionEnabled);
@@ -364,7 +365,7 @@ contract UnpoisonWallet is EIP712, ReentrancyGuard {
 
     /// @notice Riskier changes (shorter delay, protection off) wait 24 hours and can be cancelled.
     function proposeChange(uint256 newDelay, bool disableProtection) external onlyOwner {
-        if (newDelay < MIN_WINDOW) revert BadDelay();
+        if (newDelay < MIN_WINDOW || newDelay > MAX_DELAY) revert BadDelay();
         uint64 applyAt = uint64(block.timestamp + TIMELOCK);
         pendingChange = PendingChange(newDelay, disableProtection, applyAt, true);
         emit ChangeProposed(newDelay, disableProtection, applyAt);
