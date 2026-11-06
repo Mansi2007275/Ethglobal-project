@@ -158,7 +158,54 @@ It turned out to be a **`HandshakeCreated`** event — Mansi had already pushed 
 
 This is most of 4g's setup already done — it only needs Amit to claim it.
 
-### 4c — not done yet
+### 4c — ❌ FAIL: paired the wrong address (now cleaned up, needs redoing)
+The app showed "amit · Verified", but the chain disagreed. `isContact(Amit)` read **`false`**, and
+`getContacts()` returned:
+
+```
+[(0xE3f8da887397706Ddca28a8D27284f3bcE42eb4f, "amit")]
+```
+
+The **label** is "amit" but the **address is Rahul's own**. So during `/pair`, MetaMask was still on the Rahul
+account when the invite was signed, and the reply carried Rahul's address as the contact.
+
+**The contract is not at fault — it behaved exactly as designed.** `pairWithSignature` enforces
+`ECDSA.recover(digest, signature) != contact → revert InvalidSignature` (line 171). Rahul signed for Rahul's own
+address, so signer and contact matched and the pairing was legitimately accepted. That is precisely the security
+property Unpoison claims: **you can only add an address you can sign for.** The guard never fired because no
+forgery was attempted — the wrong address was simply supplied honestly.
+
+Cleaned up with `removeContact(0xE3f8…eb4f)`:
+https://testnet.arcscan.app/tx/0x64304e9ca43af1d30c640e8285b90810aeb89eb5c367ec00d08bfbed26e38642
+`getContacts()` is now `[]` and both `isContact` reads are `false`, so the slate is clean for a correct pairing.
+Note the first invite was consumed (`inv.used = true`), so a **new invite** is needed.
+
+### 4d — partial: poison ✅, raw-send ❌ (blocked by 4c)
+| Sub-test | Result | Proof |
+| --- | --- | --- |
+| `npm run poison` | **PASS** | Scammer sent 0.0001 USDC dust to the wallet. https://testnet.arcscan.app/tx/0xe0dad89f60c1a3dda532895722d413f7cf8f80bea75c71d705b50f9e0ee83f68 |
+| `npm run raw-send` | **FAIL** | Prints `FAIL: the contract allowed it (is the real contact paired?)`. Correct behaviour: the scammer is a lookalike of **Amit**, and Amit is not a contact, so there is nothing for the guard to compare against. |
+| `/api/spam` shows the poison tx | **FAIL** | Returns `{"items":[]}` in 3.86s (HTTP 200, so the route is healthy). |
+
+**Why the spam tab is empty — traced, not guessed.** `app/api/spam/route.ts` only lists an item when
+`signals.length >= 2`. For the dust tx only **one** signal fires:
+
+- `dust` ✅ (0.0001 < 0.01)
+- `lookalike` ❌ — `known` held only Rahul's address, and the scammer looks nothing like it
+- `fakeToken` ❌ (real USDC), `notSigned` ❌ (incoming), `timing` ❌ (no real outgoing payments yet)
+
+Once Amit is properly paired, `isLookalike(0x75e9…2263, 0x75E0…b263)` is true (`75e` + `263` match), giving
+`["lookalike","dust"]` = 2 signals, and the bait will appear. **All three 4d/spam failures share the single
+root cause of 4c.**
+
+### Script fix: private keys without `0x`
+`npm run raw-send` first crashed with `invalid private key, expected hex or 32 bytes, got string`.
+`DEPLOYER_PRIVATE_KEY` was saved without the `0x` prefix (the scammer key had it, which is why `poison` worked).
+Rather than ask for the file to be re-edited, `web/scripts/_env.ts` now normalises the key: trims whitespace,
+strips stray quotes, adds `0x` when missing, and validates it is 64 hex chars with a clear error otherwise.
+The key is never logged.
+
+### 4c — what still needs doing
 `isContact(0x75E0…b263)` reads **`false`**, so Amit is not a verified contact yet. This needs Amit's EIP-712
 signature, and `AMIT_PRIVATE_KEY` is empty, so it cannot be scripted — Mansi must sign as Amit in MetaMask.
 4d depends on this: `raw-send` can only show `LookalikeStopped` once Amit is an actual contact.

@@ -19,8 +19,24 @@ export function need(name: string): string {
 
 export const pub = createPublicClient({ chain: arcTestnet, transport: http() });
 
+/**
+ * A key pasted from MetaMask often arrives without the `0x` prefix, and sometimes with stray
+ * whitespace or quotes from an editor. viem needs a clean 0x-prefixed 32-byte hex string, so
+ * normalise it here instead of making every script (and every user) get the format exactly right.
+ * The key itself is never logged.
+ */
+function privateKey(keyVar: string): Hex {
+  const raw = need(keyVar).trim().replace(/^["']|["']$/g, "");
+  const hex = (raw.startsWith("0x") ? raw.slice(2) : raw).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hex)) {
+    console.error(`${keyVar} is not a 32-byte hex private key (got ${hex.length} hex chars, expected 64).`);
+    process.exit(1);
+  }
+  return `0x${hex}` as Hex;
+}
+
 export function signer(keyVar: string) {
-  const account = privateKeyToAccount(need(keyVar) as Hex);
+  const account = privateKeyToAccount(privateKey(keyVar));
   return { account, client: createWalletClient({ account, chain: arcTestnet, transport: http() }) };
 }
 
