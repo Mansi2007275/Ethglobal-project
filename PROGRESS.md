@@ -205,7 +205,74 @@ Rather than ask for the file to be re-edited, `web/scripts/_env.ts` now normalis
 strips stray quotes, adds `0x` when missing, and validates it is 64 hex chars with a clear error otherwise.
 The key is never logged.
 
-### 4c — what still needs doing
+### 4c — ✅ PASS on the retry (paired by script, correct address this time)
+`AMIT_PRIVATE_KEY` was verified first: it derives to `0x75E04Ef6D49aA13Ea1B3F7c9C82BA0B6a7F2b263`, matching Amit
+exactly. The key was never printed.
+
+The app still showed "amit · Verified" from a stale page, but the chain said `getContacts()` was `[]` — the old
+entry had been removed. So pairing genuinely had to be redone, and was, as three on-chain steps:
+
+| Step | Tx |
+| --- | --- |
+| 1. owner `createInvite` | https://testnet.arcscan.app/tx/0x565345d881450e0e5c76d22ebd1afc04bf9b1c8680dce0eefa4950cda3533eeb |
+| 2. **Amit signs EIP-712** with his own key (off-chain) | signer verified = `0x75E0…b263` |
+| 3. owner `pairWithSignature` | https://testnet.arcscan.app/tx/0x3429a996454e9e43fb325ca69f82679bdccd6541b9eb0145b41a7cf2fca2129a |
+
+Verified by **address**, not by label this time — that was the trap the first attempt fell into:
+
+```
+getContacts()      = [(0x75E04Ef6D49aA13Ea1B3F7c9C82BA0B6a7F2b263, "Amit")]
+isContact(Amit)    = true
+isContact(Scammer) = false
+```
+
+### 4d — ✅ PASS (all three parts, after 4c was fixed)
+| Sub-test | Result | Proof |
+| --- | --- | --- |
+| `npm run poison` | **PASS** | https://testnet.arcscan.app/tx/0xe0dad89f60c1a3dda532895722d413f7cf8f80bea75c71d705b50f9e0ee83f68 |
+| `npm run raw-send` → `LookalikeStopped` | **PASS** | `OK: contract reverted with LookalikeStopped(0x75E04Ef6D49aA13Ea1B3F7c9C82BA0B6a7F2b263). No server involved.` The contract not only refused, it **named the contact being imitated**. |
+| `/api/spam` shows the poison tx with ≥2 reasons | **PASS** | `signals: ["lookalike","dust"]`, `imitates: 0x75e04ef6…b263`, amount `0.000100`, HTTP 200 in **4.29s**. |
+
+This is the headline demo result: with the web server irrelevant to the check, the **contract itself** stopped a
+payment to a lookalike address and pointed at the real contact it was impersonating.
+
+### 4g — ✅ PASS (Handshake Pay sent and claimed)
+| Step | Detail | Tx |
+| --- | --- | --- |
+| owner `sendHandshake(Amit, 0.1 USDC, 1h)` → id **2** | success | https://testnet.arcscan.app/tx/0xce40a517bd2c32771fd0173da2ee03e97be4dc141d24ce8d84c205f48e877317 |
+| **Amit** `claim(2, secret)` from his own account | success | https://testnet.arcscan.app/tx/0x16864554ee136ba40453dbdaa96f2dc9bda3e5c90729787d9d8d03040fb9aebe |
+
+Final state `getEscrows()`:
+
+```
+id 0: Handshake 1.0 USDC -> Amit : Pending    (Mansi's own, from the app; she holds the link)
+id 1: Handshake 0.1 USDC -> Amit : Pending    (orphaned, see below)
+id 2: Handshake 0.1 USDC -> Amit : Claimed    <- 4g
+```
+
+Amit's USDC went **19.941518 → 20.039928** (+0.09841): the 0.1 arrived minus his gas, since gas on Arc is paid
+in USDC. Escrow id 2 reads `Claimed`, exactly as 4g requires.
+
+**One thing I got wrong, recorded honestly:** my first 4g attempt used a hand-written `escrows(uint256)` ABI, but
+no such getter exists — the real one is `getEscrows()`. The read threw *after* the handshake had already been
+created, and that script held the claim secret only in memory, so **escrow id 1 (0.1 USDC) can never be claimed**.
+It is not lost: it becomes refundable once its 1-hour window passes, via `refund(1)`. The retry used the real
+generated ABI from `lib/abi.ts` instead of a guess.
+
+### Wallet state after 4a–4d + 4g
+| Reading | Value |
+| --- | --- |
+| wallet USDC | 3.9001 |
+| `totalLocked` | 1.1 (escrows 0 and 1, both Pending) |
+| `available()` | 2.8001 |
+| `escrowCount` | 3 |
+
+Reconciled exactly against on-chain transfers: deposits 1 + 2 + 1 (Mansi, from the app, after the fee fix) +
+0.0001 (scammer dust) − 0.1 (claimed by Amit) = **3.9001**. Nothing unexplained.
+
+### Still to do — 4e and 4f (need Mansi in the app)
+- **4e** red stop screen when the scammer address is pasted on Send.
+- **4f** Undo: send 0.1 to a fresh address, then Undo it; escrow status must read `Cancelled`.
 `isContact(0x75E0…b263)` reads **`false`**, so Amit is not a verified contact yet. This needs Amit's EIP-712
 signature, and `AMIT_PRIVATE_KEY` is empty, so it cannot be scripted — Mansi must sign as Amit in MetaMask.
 4d depends on this: `raw-send` can only show `LookalikeStopped` once Amit is an actual contact.
