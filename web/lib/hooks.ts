@@ -122,13 +122,52 @@ export function useTx() {
       if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sim = await client.simulateContract({ ...(p as any), account: address });
+
+      // On Arc Testnet MetaMask sometimes cannot work out the network fee by itself, which leaves its
+      // Confirm button greyed out. So we price the transaction here and hand MetaMask the numbers.
+      // Every write in the app (including the USDC deposit) goes through run(), so this covers all of them.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const hash = await writeContractAsync(sim.request as any);
+      const gas = await gasFor({ ...(p as any), account: address });
+      const fees = await feeOverrides();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hash = await writeContractAsync({ ...(sim.request as any), ...(gas ? { gas } : {}), ...fees });
       const receipt = await client.waitForTransactionReceipt({ hash });
       return { hash, receipt, result: sim.result };
     } finally {
       setBusy(false);
     }
   }
+
+  /** Estimated gas with a 20% head-room, so a slightly heavier block cannot push the tx out of gas. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function gasFor(req: any): Promise<bigint | undefined> {
+    try {
+      const est = await client!.estimateContractGas(req);
+      return (est * 12n) / 10n;
+    } catch {
+      return undefined; // let the wallet decide rather than block the send
+    }
+  }
+
+  /** EIP-1559 fees when the chain reports them, otherwise a legacy gasPrice. Never both. */
+  async function feeOverrides(): Promise<
+    { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | { gasPrice: bigint } | Record<string, never>
+  > {
+    try {
+      const f = await client!.estimateFeesPerGas();
+      if (f.maxFeePerGas != null && f.maxPriorityFeePerGas != null) {
+        return { maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas };
+      }
+    } catch {
+      /* fall through to legacy pricing */
+    }
+    try {
+      return { gasPrice: await client!.getGasPrice() };
+    } catch {
+      return {};
+    }
+  }
+
   return { run, busy };
 }

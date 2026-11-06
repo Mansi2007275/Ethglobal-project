@@ -138,6 +138,31 @@ cleanup needed.
 `2592000` = exactly 30 days. That confirms the deployed *wallet* carries the cap, from real deployed state and
 not only from a gas estimate.
 
+### MetaMask fee fix (done) — and why Confirm was greyed out
+MetaMask's Confirm button was disabled on "Create my wallet" because the fee never loaded. Probing Arc Testnet
+shows why:
+
+| Reading | Value |
+| --- | --- |
+| `estimateFeesPerGas().maxFeePerGas` | 24 gwei |
+| `estimateFeesPerGas().maxPriorityFeePerGas` | **0** |
+| `getGasPrice()` | 20 gwei |
+| block `baseFeePerGas` | 20 gwei |
+| `estimateContractGas(createWallet(120))` | 2 948 456 (→ 3 538 147 with 20% head-room) |
+
+Arc *does* support EIP-1559, but it reports a **zero** priority fee, which is what trips up MetaMask's fee UI.
+
+Fix in `web/lib/hooks.ts` (`useTx`): after simulating, the app now estimates gas itself
+(`estimateContractGas × 12 / 10`) and passes explicit fees — `maxFeePerGas` + `maxPriorityFeePerGas` from
+`estimateFeesPerGas()`, falling back to `gasPrice` from `getGasPrice()`, never both. Both helpers degrade
+gracefully: if an estimate fails the send still proceeds and the wallet prices it.
+
+Worth noting: the zero-priority-fee check uses `!= null`, **not** truthiness. With a plain `if (value)` the
+legitimate `0n` would look falsy and wrongly fall back to legacy pricing.
+
+Every write in the app goes through `run()`, so the wallet creation **and** the USDC deposit are both covered by
+this one change. `next build` passes and all 8 routes return 200 after the fix.
+
 ### `.env` keys — still empty on disk
 Checked by name only (values never read or printed): `DEPLOYER_PRIVATE_KEY`, `AMIT_PRIVATE_KEY`,
 `SCAMMER_PRIVATE_KEY`, `ARKIV_PRIVATE_KEY` and `UNPOISON_WALLET` are all **EMPTY**; only `FACTORY_ADDRESS` is set.
