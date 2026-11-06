@@ -90,6 +90,13 @@ LookalikeStopped(0x75E04Ef6D49aA13Ea1B3F7c9C82BA0B6a7F2b263)
 | Poisoning attack: scammer sends dust bait | [`0xe0dad89f…`](https://testnet.arcscan.app/tx/0xe0dad89f60c1a3dda532895722d413f7cf8f80bea75c71d705b50f9e0ee83f68) |
 | Handshake Pay sent (0.1 USDC, escrow id 2) | [`0xce40a517…`](https://testnet.arcscan.app/tx/0xce40a517bd2c32771fd0173da2ee03e97be4dc141d24ce8d84c205f48e877317) |
 | Claimed by the receiver from their own address | [`0x16864554…`](https://testnet.arcscan.app/tx/0x16864554ee136ba40453dbdaa96f2dc9bda3e5c90729787d9d8d03040fb9aebe) |
+| Undo: 0.1 USDC escrowed to a fresh address | [`0xd15d58ed…`](https://testnet.arcscan.app/tx/0xd15d58ed1e65564f878f36cbdb3c9c652e35f80fe77f0915e0d4fc3ef0c2fc01) |
+| Undo: cancelled — the money never left the wallet | [`0x30139767…`](https://testnet.arcscan.app/tx/0x30139767f81dfc06e43146c49313c2538cffde51e9bb10ef4cd2b018be5fb119) |
+
+Pasting the lookalike on Send gives a red stop screen reading **"Stop. This is not Amit"** with no Send button,
+and the bait appears in the Spam tab instead of the payment history. After the Undo above, the escrow reads
+`Cancelled`, the recipient's balance is `0`, and the wallet balance is unchanged — verified on chain, not just
+in the UI.
 
 The bait lands in the Spam tab rather than the payment history, flagged with two independent signals:
 

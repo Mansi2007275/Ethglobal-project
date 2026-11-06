@@ -270,9 +270,57 @@ generated ABI from `lib/abi.ts` instead of a guess.
 Reconciled exactly against on-chain transfers: deposits 1 + 2 + 1 (Mansi, from the app, after the fee fix) +
 0.0001 (scammer dust) − 0.1 (claimed by Amit) = **3.9001**. Nothing unexplained.
 
-### Still to do — 4e and 4f (need Mansi in the app)
-- **4e** red stop screen when the scammer address is pasted on Send.
-- **4f** Undo: send 0.1 to a fresh address, then Undo it; escrow status must read `Cancelled`.
+### 4e — ✅ PASS (red stop screen, reported by Mansi in the app)
+Pasting the scammer `0x75e9e0F33d0fa1B6538c69a34Ba00b4a1D0a2263` on Send produced:
+- red stop screen reading **"Stop. This is not Amit"**
+- **no Send button** — the payment cannot even be attempted
+- the middle-check prompt asking for **characters 17–22**
+- Spam tab badge showing **1**
+
+This is the UI counterpart to the on-chain `LookalikeStopped` already proven in 4d: the app refuses it, and so
+does the contract independently.
+
+### 4f — ✅ PASS (Undo verified on chain, not just in the UI)
+0.1 USDC sent to the fresh address `0xb458c2e8E0A3a2D400C92BB1175d749763467299` (random, deliberately not a
+contact and not a lookalike of Amit, so it takes the Undo escrow path), then Undone from Activity.
+
+| Step | Tx |
+| --- | --- |
+| `Escrowed` id 3 → 0.1 USDC to `0xb458…7299` | https://testnet.arcscan.app/tx/0xd15d58ed1e65564f878f36cbdb3c9c652e35f80fe77f0915e0d4fc3ef0c2fc01 |
+| `Cancelled` id 3 (the Undo) | https://testnet.arcscan.app/tx/0x30139767f81dfc06e43146c49313c2538cffde51e9bb10ef4cd2b018be5fb119 |
+
+The UI said "Undone"; the chain agrees, and three independent readings confirm the money genuinely never moved:
+
+```
+escrow id 3 : Undo 0.1 USDC -> 0xb458...7299  [Cancelled]
+0xb458...7299 USDC balance  : 0          <- recipient got nothing
+wallet USDC                 : 3.9001     <- unchanged
+totalLocked                 : 1.1        <- the 0.1 was released back
+```
+
+Worth noting for the demo script: `cancel()` has **no deadline** — it only requires the escrow to still be
+`Pending`. The 120s `escrowDelay` is when `release()` *becomes possible* (and `release` is callable by anyone),
+not a countdown to lose the right to Undo.
+
+### STEP 4 (live tests) — COMPLETE: 4a–4g all PASS
+| Sub-test | Result |
+| --- | --- |
+| 4a create wallet | ✅ PASS |
+| 4b add USDC | ✅ PASS |
+| 4c pair Amit (EIP-712) | ✅ PASS (after one wrong-address attempt, caught by reading the chain) |
+| 4d poison + raw-send + spam API | ✅ PASS (all three) |
+| 4e red stop screen | ✅ PASS |
+| 4f Undo → `Cancelled` | ✅ PASS |
+| 4g Handshake → `Claimed` | ✅ PASS |
+
+Final escrow ledger:
+
+```
+id 0: Handshake 1.0 USDC -> Amit  [Pending]    Mansi's own from the app; she holds the claim link
+id 1: Handshake 0.1 USDC -> Amit  [Pending]    orphaned by my ABI mistake; refundable via refund(1)
+id 2: Handshake 0.1 USDC -> Amit  [Claimed]    4g
+id 3: Undo      0.1 USDC -> fresh [Cancelled]  4f
+```
 `isContact(0x75E0…b263)` reads **`false`**, so Amit is not a verified contact yet. This needs Amit's EIP-712
 signature, and `AMIT_PRIVATE_KEY` is empty, so it cannot be scripted — Mansi must sign as Amit in MetaMask.
 4d depends on this: `raw-send` can only show `LookalikeStopped` once Amit is an actual contact.
