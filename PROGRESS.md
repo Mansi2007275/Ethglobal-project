@@ -111,7 +111,41 @@ scammer (0 gas / 0 USDC on chain). Nothing here is reported as passing.
 - Lookalike / scammer: `0x75e9e0F33d0fa1B6538c69a34Ba00b4a1D0a2263` (starts `75e`, ends `263`, like Amit)
 
 ## Live test
-_Tx hashes and Arcscan links go here once STEP 4 runs._
+
+### 4a — NOT PASSED YET (wrong account created the wallet)
+A wallet **was** created, but with the **wrong owner**. Scanned the factory's `WalletCreated` events
+(200 000 blocks): exactly one event exists.
+
+| Field | Value |
+| --- | --- |
+| Owner recorded | `0x75E04Ef6D49aA13Ea1B3F7c9C82BA0B6a7F2b263` — **Amit**, not Rahul |
+| Wallet created | `0x4b603902207A2439dFf7f95b12c81aE28D0e10cD` |
+| escrowDelay | 120 s |
+| Block | 70976847 |
+| Tx | https://testnet.arcscan.app/tx/0x6e5b90abafb6064801679258d40d8899c5a5f392effa40cf5d7b9a479c2b30e7 |
+
+So MetaMask was on the Amit account at "Create my wallet". Confirmed by reading state back:
+`walletOf(0xE3f8…eb4f)` = `0x0` (Rahul still has **no** wallet) and `walletOf(0x75E0…b263)` = `0x4b60…10cD`.
+
+**Why this matters for the demo:** Amit must stay the *contact*, because the scammer address is a lookalike of
+Amit (`75e…263`). If Amit owns the wallet, the whole poisoning story breaks. Rahul must own the wallet.
+
+**Fix:** Rahul creates his own wallet from `0xE3f8…eb4f`. The factory is one-wallet-per-owner, so Amit already
+having one does not block Rahul. The stray Amit wallet is harmless and can simply be ignored — no redeploy, no
+cleanup needed.
+
+**Bonus proof from this wallet:** reading `MAX_DELAY()` on the live instance `0x4b60…10cD` returns
+`2592000` = exactly 30 days. That confirms the deployed *wallet* carries the cap, from real deployed state and
+not only from a gas estimate.
+
+### `.env` keys — still empty on disk
+Checked by name only (values never read or printed): `DEPLOYER_PRIVATE_KEY`, `AMIT_PRIVATE_KEY`,
+`SCAMMER_PRIVATE_KEY`, `ARKIV_PRIVATE_KEY` and `UNPOISON_WALLET` are all **EMPTY**; only `FACTORY_ADDRESS` is set.
+Searched the project for stray files (`*.env*`): only `.env`, `.env.example`, `web/.env.local` exist, so the keys
+did not land in a misnamed file such as `.env.txt`. The scripts in 4d cannot run until these are filled.
+
+### Funding — now good
+Scammer `0x75e9…2263` is funded: **20 gas, 20 USDC** (faucet worked). Owner and Amit both 20/20.
 
 ## Open problems
 - **History was already rewritten before these instructions arrived.** In the previous session the repo was
