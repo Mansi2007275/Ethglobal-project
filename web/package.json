@@ -1,0 +1,29 @@
+{
+  "name": "unpoison-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "poison": "tsx scripts/poison.ts",
+    "raw-send": "tsx scripts/raw-send.ts",
+    "fake-token": "tsx scripts/fake-token.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.59.0",
+    "next": "15.5.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "viem": "^2.21.0",
+    "wagmi": "^2.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
