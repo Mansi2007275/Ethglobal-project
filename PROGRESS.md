@@ -112,7 +112,58 @@ scammer (0 gas / 0 USDC on chain). Nothing here is reported as passing.
 
 ## Live test
 
-### 4a — NOT PASSED YET (wrong account created the wallet)
+### 4a — ✅ PASS (created by script, correct owner)
+MetaMask's Confirm button was dead, so the wallet was created with `cast send` using `DEPLOYER_PRIVATE_KEY`.
+The key's address was derived and checked **first**: it resolved to `0xE3f8da887397706Ddca28a8D27284f3bcE42eb4f`,
+matching Rahul exactly, so it was safe to proceed. The key itself was never printed.
+
+| Field | Value |
+| --- | --- |
+| **Unpoison wallet** | `0x069EebDEb5528693C877aAc71389F7B60B64961d` |
+| `owner()` | `0xE3f8da887397706Ddca28a8D27284f3bcE42eb4f` ✅ Rahul, correct this time |
+| `escrowDelay()` | 120 s |
+| `MAX_DELAY()` | 2 592 000 = 30 days ✅ |
+| `protectionEnabled()` | `true` |
+| Tx | https://testnet.arcscan.app/tx/0x2afd91c13c9b64a86783ec62d78ec1aadd018bfb92a661bde39a9596829828cd |
+
+Written to `.env` as `UNPOISON_WALLET` with an in-place `sed`, so no key values were ever read into the session.
+
+### 4b — ✅ PASS (wallet holds 3 USDC)
+Mansi had already sent 1 USDC from the app, so 2 more were sent by script to reach the 3 that 4b calls for.
+
+| Reading | Value |
+| --- | --- |
+| `balanceOf(wallet)` | 3 000 000 = **3.0 USDC** ✅ |
+| `available()` | 2 000 000 = 2.0 USDC (1.0 is locked, see 4g below) |
+| `totalLocked` | 1 000 000 = 1.0 USDC |
+| Deposit tx (2 USDC, by script) | https://testnet.arcscan.app/tx/0xfe0e3329ec2eaafa1cc674e9600839bd59f65734470a4474375373ee37936550 |
+| Deposit tx (1 USDC, by Mansi in the app) | https://testnet.arcscan.app/tx/0xd4e4ab9f5b884285455db654288759ee6f8450b2890e4d048318e58a15e54b33 |
+
+Arc quirk confirmed: that single 1 USDC deposit shows up as **two** Transfer logs in the same tx — once from the
+native emitter `0xffff…fffe` at 18 decimals and once from the ERC-20 interface `0x3600…0000` at 6 decimals.
+Native and ERC-20 USDC really do share one balance, exactly as the contract comment says.
+
+### The fee fix is confirmed working on real hardware
+The wallet had an unexplained 1 USDC locked, so the wallet's own events were decoded rather than guessed at.
+It turned out to be a **`HandshakeCreated`** event — Mansi had already pushed a Handshake Pay through MetaMask
+**after** the gas/fee fix. That is live proof the fix works: a real transaction was signed and mined from the UI.
+
+| Field | Value |
+| --- | --- |
+| Escrow id | 0 |
+| To | `0x75E04Ef6D49aA13Ea1B3F7c9C82BA0B6a7F2b263` (Amit) |
+| Amount | 1.0 USDC |
+| Claim deadline | 2026-11-07 06:13:25 UTC (~24h window) |
+| Tx | https://testnet.arcscan.app/tx/0x1dce3954d95a77bbedff74fbb4cd943e4a1f4126b13159a467758de60fb5aac0 |
+
+This is most of 4g's setup already done — it only needs Amit to claim it.
+
+### 4c — not done yet
+`isContact(0x75E0…b263)` reads **`false`**, so Amit is not a verified contact yet. This needs Amit's EIP-712
+signature, and `AMIT_PRIVATE_KEY` is empty, so it cannot be scripted — Mansi must sign as Amit in MetaMask.
+4d depends on this: `raw-send` can only show `LookalikeStopped` once Amit is an actual contact.
+
+### Superseded: the earlier wrong-account wallet
 A wallet **was** created, but with the **wrong owner**. Scanned the factory's `WalletCreated` events
 (200 000 blocks): exactly one event exists.
 
